@@ -11,7 +11,7 @@ TS_Packet = namedtuple(typename="TS_Packet",
 TS_Header = namedtuple(typename="TS_Header",
                        field_names=["sync_byte",
                                     "transport_error_indicator",
-                                    "payload_unit_start_indicator ",
+                                    "payload_unit_start_indicator",
                                     "transport_priority",
                                     "packet_identifier",
                                     "transport_scrambling_control",
@@ -20,15 +20,15 @@ TS_Header = namedtuple(typename="TS_Header",
                        )
 
 AF_Header = namedtuple(typename="AF_Header",
-                       field_names=["af_length",
-                                    "di",
-                                    "rai",
-                                    "espi",
-                                    "pcrf",
-                                    "opcrf",
-                                    "spf",
-                                    "tpdf",
-                                    "afef"]
+                       field_names=["adaptation_field_length",
+                                    "discontinuity_indicator",
+                                    "random_access_indicator",
+                                    "elementary_stream_priority_indicator",
+                                    "program_clock_reference_flag",
+                                    "original_program_clock_reference_flag",
+                                    "splicing_point_flag",
+                                    "transport_private_data_flag",
+                                    "adaptation_field_extension_flag"]
                        )
 
 TS_Payload = namedtuple(typename="TS_Payload",
@@ -36,12 +36,11 @@ TS_Payload = namedtuple(typename="TS_Payload",
                                      "payload"]
                         )
 
-
 AdaptationField = namedtuple(typename="AdaptationField",
-                             field_names=["af_length",
+                             field_names=["adaptation_field_length",
                                           "adaptation_field_header",
-                                          "pcr",
-                                          "opcr",
+                                          "program_clock_reference",
+                                          "original_program_clock_reference",
                                           "splicing_point",
                                           "transport_private_data",
                                           "adaptation_field_extension"
@@ -55,48 +54,64 @@ def mpeg_ts_packet_generator(filename):
 
 
 def init_ts_header(packet):
-    ts_header = unpack("!I", packet)[0]
-    sync = (ts_header & 0xff000000) >> 24  # sync byte
-    tei = (ts_header & 0x00800000) >> 23  # transport error indicator
-    pusi = (ts_header & 0x00400000) >> 22  # payload unit start indicatorc
-    tp = (ts_header & 0x200000) >> 21  # transport_priority
-    pid = (ts_header & 0x1fff00) >> 8  # packet identifier
-    tsc = (ts_header & 0xc0) >> 6  # transport scrambling control
-    afc = (ts_header & 0x30) >> 4  # adaptation field control
-    cc = ts_header & 0xf  # continuity counter
+    ts_header = unpack("!I", packet.read(4))[0]
+    sync_byte = (ts_header & 0xff000000) >> 24
+    transport_error_indicator = (ts_header & 0x00800000) >> 23
+    payload_unit_start_indicator = (ts_header & 0x00400000) >> 22
+    transport_priority = (ts_header & 0x200000) >> 21
+    packet_identifier = (ts_header & 0x1fff00) >> 8
+    transport_scrambling_control = (ts_header & 0xc0) >> 6
+    adaptation_field_control = (ts_header & 0x30) >> 4
+    continuity_counter = ts_header & 0xf
 
-    return TS_Header(sync, tei, pusi, tp, pid, tsc, afc, cc)
+    return TS_Header(sync_byte,
+                     transport_error_indicator,
+                     payload_unit_start_indicator,
+                     transport_priority,
+                     packet_identifier,
+                     transport_scrambling_control,
+                     adaptation_field_control,
+                     continuity_counter)
 
 
-def init_adaptation_field_header(af_length, packet):
-    if af_length != 0:
-        af_header = unpack("!B", packet.read(1))[0]
-        di = (af_header & 0x80) >> 7  # discontinuity indicator
-        rai = (af_header & 0x40) >> 6  # random access indicator
-        espi = (af_header & 0x20) >> 5  # elementary stream priority indicator
-        pcrf = (af_header & 0x10) >> 4  # PCR flag
-        opcrf = (af_header & 0x08) >> 3  # OPCR flag
-        spf = (af_header & 0x04) >> 2  # splicing point flag
-        tpdf = (af_header & 0x02) >> 1  # transport private data flag
-        afef = (af_header & 0x01)  # Adaptation field extension flag
+def init_adaptation_field_header(adaptation_field_length, packet):
+    if adaptation_field_length != 0:
+        adaptation_field_header = unpack("!B", packet.read(1))[0]
+        discontinuity_indicator = (adaptation_field_header & 0x80) >> 7
+        random_access_indicator = (adaptation_field_header & 0x40) >> 6
+        elementary_stream_priority_indicator = (adaptation_field_header & 0x20) >> 5
+        program_clock_reference_flag = (adaptation_field_header & 0x10) >> 4
+        original_program_clock_reference_flag = (adaptation_field_header & 0x08) >> 3
+        splicing_point = (adaptation_field_header & 0x04) >> 2
+        transport_private_data = (adaptation_field_header & 0x02) >> 1
+        adaptation_field_extension = (adaptation_field_header & 0x01)
     else:
-        di = None  # discontinuity indicator
-        rai = None  # random access indicator
-        espi = None  # elementary stream priority indicator
-        pcrf = None  # PCR flag
-        opcrf = None  # OPCR flag
-        spf = None  # splicing point flag
-        tpdf = None  # transport private data flag
-        afef = None
-    return AF_Header(af_length, di, rai, espi, pcrf, opcrf, spf, tpdf, afef)
+        discontinuity_indicator = None
+        random_access_indicator = None
+        elementary_stream_priority_indicator = None
+        program_clock_reference_flag = None
+        original_program_clock_reference_flag = None
+        splicing_point = None
+        transport_private_data = None
+        adaptation_field_extension = None
+
+    return AF_Header(adaptation_field_length,
+                     discontinuity_indicator,
+                     random_access_indicator,
+                     elementary_stream_priority_indicator,
+                     program_clock_reference_flag,
+                     original_program_clock_reference_flag,
+                     splicing_point,
+                     transport_private_data,
+                     adaptation_field_extension)
 
 
-def calc_pcr(packet):
-    pcr, rsrv, pcr_ex = unpack("!LBB", packet)
-    pcr = (pcr << 1) + (rsrv >> 7)
-    pcr_ex = pcr_ex + ((rsrv & 1) << 9)
-    pcr = pcr * 300 + pcr_ex
-    return pcr
+def calc_program_clock_reference(packet):
+    program_clock_reference, reserved, extension = unpack("!LBB", packet)
+    program_clock_reference = (program_clock_reference << 1) + (reserved >> 7)
+    extension = extension + ((reserved & 1) << 9)
+    program_clock_reference = program_clock_reference * 300 + extension
+    return program_clock_reference
 
 
 def get_splicing_point(packet):
@@ -104,16 +119,16 @@ def get_splicing_point(packet):
     return splicing_point
 
 
-def get_tpd(packet):
-    tpdl = unpack("!B", packet.read(1))[0]
-    tpd = packet.read(tpdl)
-    return tpd, tpdl
+def get_transport_private_data(packet):
+    transport_private_data_length = unpack("!B", packet.read(1))[0]
+    transport_private_data = packet.read(transport_private_data_length)
+    return transport_private_data, transport_private_data_length
 
 
-def get_adaptation_field_extension(packet):
-    ael = unpack("!B", packet.read(1))[0]
-    ae = packet.read(ael)
-    return ae, ael
+def get_adaptation_extension(packet):
+    adaptation_extension_length = unpack("!B", packet.read(1))[0]
+    adaptation_extension = packet.read(adaptation_extension_length)
+    return adaptation_extension, adaptation_extension_length
 
 
 def strip_stuffing_bytes(packet, stuffing_bytes_length):
@@ -121,35 +136,46 @@ def strip_stuffing_bytes(packet, stuffing_bytes_length):
 
 
 def init_adaptation_field(packet):
-    af_length = unpack("!B", packet.read(1))[0]
-    adaptation_field_header = init_adaptation_field_header(af_length, packet)
-    if af_length == 0:
-        stuffing_bytes_length = adaptation_field_header.af_length
+    adaptation_field_length = unpack("!B", packet.read(1))[0]
+    adaptation_field_header = init_adaptation_field_header(adaptation_field_length, packet)
+    if adaptation_field_length == 0:
+        stuffing_bytes_length = adaptation_field_header.adaptation_field_length
     else:
-        stuffing_bytes_length = adaptation_field_header.af_length - 1
-    pcr = None
-    if adaptation_field_header.pcrf:
-        pcr = calc_pcr(packet.read(6))
+        stuffing_bytes_length = adaptation_field_header.adaptation_field_length - 1
+
+    program_clock_reference = None
+    if adaptation_field_header.program_clock_reference_flag:
+        program_clock_reference = calc_program_clock_reference(packet.read(6))
         stuffing_bytes_length -= 6
-    opcr = None
-    if adaptation_field_header.opcrf:
-        opcr = calc_pcr(packet.read(6))
+
+    original_program_clock_reference = None
+    if adaptation_field_header.original_program_clock_reference_flag:
+        original_program_clock_reference = calc_program_clock_reference(packet.read(6))
         stuffing_bytes_length -= 6
+
     splicing_point = None
-    if adaptation_field_header.spf:
+    if adaptation_field_header.splicing_point_flag:
         splicing_point = get_splicing_point(packet.read(1))
         stuffing_bytes_length -= 1
+
     transport_private_data = None
-    if adaptation_field_header.tpdf:
-        transport_private_data, tpd_length = get_tpd(packet)
+    if adaptation_field_header.transport_private_data_flag:
+        transport_private_data, tpd_length = get_transport_private_data(packet)
         stuffing_bytes_length -= 1 + tpd_length
-    adaptation_field_extension = None
-    if adaptation_field_header.afef:
-        adaptation_field_extension, afe_length = get_adaptation_field_extension(packet)
-        stuffing_bytes_length -= 1 + afe_length
+
+    adaptation_extension = None
+    if adaptation_field_header.adaptation_field_extension_flag:
+        adaptation_extension, adaptation_extension_length = get_adaptation_extension(packet)
+        stuffing_bytes_length -= 1 + adaptation_extension_length
+
     strip_stuffing_bytes(packet, stuffing_bytes_length)
-    return AdaptationField(af_length, adaptation_field_header, pcr, opcr,
-                           splicing_point, transport_private_data, adaptation_field_extension)
+    return AdaptationField(adaptation_field_length,
+                           adaptation_field_header,
+                           program_clock_reference,
+                           original_program_clock_reference,
+                           splicing_point,
+                           transport_private_data,
+                           adaptation_extension)
 
 
 def init_payload(packet, payload_pointer_flag):
@@ -159,18 +185,19 @@ def init_payload(packet, payload_pointer_flag):
     else:
         payload_pointer = None
         payload = packet.read()
-    return TS_Payload(payload_pointer, payload)
+    return TS_Payload(payload_pointer,
+                      payload)
 
 
 def init_ts_packet(packet):
     packet = io.BytesIO(packet)
-    ts_header = init_ts_header(packet.read(4))
-    if ts_header.afc in [2, 3]:
+    ts_header = init_ts_header(packet)
+    if ts_header.adaptation_field_control in [2, 3]:
         adaptation_field = init_adaptation_field(packet)
     else:
         adaptation_field = None
 
-    payload = init_payload(packet, ts_header.pusi)
+    payload = init_payload(packet, ts_header.payload_unit_start_indicator)
     return TS_Packet(ts_header,
                      adaptation_field,
                      payload)
